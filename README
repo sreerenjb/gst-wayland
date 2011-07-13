@@ -1,0 +1,30 @@
+
+GstWayLandSink: WayLand video sink.
+---------------------------------------
+
+The 'waylandsink' is just a prototype for gstreamer based wayland video sink.
+Proper memory allocaion (avoid extra mem cpy), h/w decoded buffer(libva) and lots of other features needs to be add.
+
+Install
+---------------------------------------
+
+   Build and install Wayland as described in http://wayland.freedesktop.org/building.html
+   
+   make
+   cp  libgstwaylandsink.so  /usr/lib/gstreamer-0.10
+   
+Test
+---------------------------------------
+
+Run   
+
+   gst-inspect waylandsink
+
+And make sure that the plugin is installed correctly.
+
+eg:
+
+   Run wayland compositor in one terminal (http://cgit.freedesktop.org/wayland/wayland-demos/)
+   
+  eg1: gst-launch -v playbin2 video-sink=waylandsink uri=file://video
+  eg2: gst-launch -v filesrc location=video.mp4 ! decodebin2 ! queue  ! ffmpegcolorspace ! videoscale ! video/x-raw-rgb,  width=320, height=240 ! waylandsink
