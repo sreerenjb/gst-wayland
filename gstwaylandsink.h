@@ -41,6 +41,9 @@
 #define GST_WAYLAND_SINK_GET_CLASS(inst) \
         (G_TYPE_INSTANCE_GET_CLASS ((inst), GST_TYPE_WAYLAND_SINK, GstWayLandSinkClass))
 
+typedef struct wl_display WlDisplay;
+typedef struct wl_buffer WlBuffer;
+
 struct  display
 {
   struct wl_display *display;
@@ -57,11 +60,29 @@ struct window
   int width, height;
   struct wl_surface *surface;
   struct wl_buffer *buffer;
-  void *data;
 };
 
 typedef struct _GstWayLandSink GstWayLandSink;
 typedef struct _GstWayLandSinkClass GstWayLandSinkClass;
+
+#define GST_TYPE_WLBUFFER (gst_wlbuffer_get_type())
+#define GST_IS_WLBUFFER(obj) (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GST_TYPE_WLBUFFER))
+#define GST_WLBUFFER (obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GST_TYPE_WLBUFFER, GstWlBuffer))
+
+typedef struct _GstWlBuffer GstWlBuffer;
+
+struct _GstWlBuffer {
+  GstBuffer buffer; /* Extending GstBuffer */
+  
+  WlBuffer *wbuffer;
+  
+  gint height;
+  gint width;
+
+  gboolean locked;
+
+  GstWayLandSink *wlsink;
+};
 
 struct _GstWayLandSink
 {
@@ -76,15 +97,21 @@ struct _GstWayLandSink
   GCond *buffer_cond;
   GMutex *buffer_lock;
 
+  GMutex *pool_lock;
+  GSList *buffer_pool;
+
   GCond *wayland_cond;
   GMutex *wayland_lock;
 
   gboolean unlock;
 
   guint width, height, depth, size;
+  guint bpp;
 
   void *MapAddr;
   gboolean render_finish;
+  gboolean init;
+  gboolean mem_alloc;
       
 };
 
@@ -94,9 +121,8 @@ struct _GstWayLandSinkClass
 
 };
 
-GType
-gst_wayland_sink_get_type (void)
-    G_GNUC_CONST;
+GType gst_wayland_sink_get_type (void) G_GNUC_CONST;
+GType gst_dfbsurface_get_type (void);
 
 G_END_DECLS
 #endif /* __GST_WAYLAND_VIDEO_SINK_H__ */
