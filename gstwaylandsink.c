@@ -100,8 +100,6 @@ static GstCaps *gst_wayland_sink_get_caps (GstBaseSink * bsink);
 static gboolean gst_wayland_sink_set_caps (GstBaseSink * bsink, GstCaps * caps);
 static gboolean gst_wayland_sink_start (GstBaseSink * bsink);
 static gboolean gst_wayland_sink_stop (GstBaseSink * bsink);
-static gboolean gst_wayland_sink_unlock (GstBaseSink * bsink);
-static gboolean gst_wayland_sink_unlock_stop (GstBaseSink * bsink);
 static GstFlowReturn
 gst_wayland_sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
     GstCaps * caps, GstBuffer ** buf);
@@ -109,6 +107,9 @@ static gboolean gst_wayland_sink_preroll (GstBaseSink * bsink,
     GstBuffer * buffer);
 static gboolean gst_wayland_sink_render (GstBaseSink * bsink,
     GstBuffer * buffer);
+static void gst_wayland_bufferpool_clear (GstWayLandSink * sink);
+static void
+gsit_wayland_buffer_destroy (GstWayLandSink * sink, GstWlBuffer * buffer);
 
 static int event_mask_update (uint32_t mask, void *data);
 static void sync_callback (void *data);
@@ -226,9 +227,6 @@ gst_wayland_sink_class_init (GstWayLandSinkClass * klass)
   gstbasesink_class->get_caps = GST_DEBUG_FUNCPTR (gst_wayland_sink_get_caps);
   gstbasesink_class->set_caps = GST_DEBUG_FUNCPTR (gst_wayland_sink_set_caps);
   gstbasesink_class->start = GST_DEBUG_FUNCPTR (gst_wayland_sink_start);
-  gstbasesink_class->unlock = GST_DEBUG_FUNCPTR (gst_wayland_sink_unlock);
-  gstbasesink_class->unlock_stop =
-      GST_DEBUG_FUNCPTR (gst_wayland_sink_unlock_stop);
   gstbasesink_class->buffer_alloc =
       GST_DEBUG_FUNCPTR (gst_wayland_sink_buffer_alloc);
   gstbasesink_class->stop = GST_DEBUG_FUNCPTR (gst_wayland_sink_stop);
@@ -261,10 +259,6 @@ gst_wayland_sink_init (GstWayLandSink * sink,
   sink->pool_lock = g_mutex_new ();
   sink->buffer_pool = NULL;
 
-  sink->buffer_cond = g_cond_new ();
-  sink->buffer_lock = g_mutex_new ();
-
-  sink->wayland_cond = g_cond_new ();
   sink->wayland_lock = g_mutex_new ();
 
   sink->render_finish = TRUE;
@@ -317,14 +311,21 @@ gst_wayland_sink_finalize (GObject * object)
 {
   GstWayLandSink *sink = GST_WAYLAND_SINK (object);
 
+  GST_DEBUG_OBJECT (sink, "Finalizing the sink..");
   gst_caps_replace (&sink->caps, NULL);
 
   free (sink->display);
   free (sink->window);
 
-  g_cond_free (sink->buffer_cond);
-  g_cond_free (sink->wayland_cond);
-  g_mutex_free (sink->buffer_lock);
+  if (sink->pool_lock) {
+    g_mutex_free (sink->pool_lock);
+    sink->pool_lock = NULL;
+  }
+
+  if (sink->buffer_pool) {
+    gst_wayland_bufferpool_clear (sink);
+  }
+
   g_mutex_free (sink->wayland_lock);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
@@ -458,6 +459,32 @@ wayland_buffer_create (GstWayLandSink * sink)
 
 }
 
+static void
+gst_wayland_buffer_destroy (GstWayLandSink * sink, GstWlBuffer * buffer)
+{
+  if (buffer->wlsink) {
+    buffer->wlsink = NULL;
+    gst_object_unref (sink);
+  }
+
+  GST_MINI_OBJECT_CLASS (wlbuffer_parent_class)->finalize (GST_MINI_OBJECT
+      (buffer));
+}
+
+static void
+gst_wayland_bufferpool_clear (GstWayLandSink * sink)
+{
+  g_mutex_lock (sink->pool_lock);
+  while (sink->buffer_pool) {
+    GstWlBuffer *buffer = sink->buffer_pool->data;
+
+    sink->buffer_pool = g_slist_delete_link (sink->buffer_pool,
+        sink->buffer_pool);
+    gst_wayland_buffer_destroy (sink, buffer);
+  }
+  g_mutex_unlock (sink->pool_lock);
+}
+
 static GstFlowReturn
 gst_wayland_sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
     GstCaps * caps, GstBuffer ** buf)
@@ -488,7 +515,7 @@ gst_wayland_sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
 
     if (buffer) {
       sink->buffer_pool =
-       g_slist_delete_link (sink->buffer_pool, sink->buffer_pool);
+          g_slist_delete_link (sink->buffer_pool, sink->buffer_pool);
     } else {
       break;
     }
@@ -498,7 +525,7 @@ gst_wayland_sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
 
   if (!buffer)
     buffer = wayland_buffer_create (sink);
-  
+
   if (buffer)
     gst_buffer_set_caps (GST_BUFFER (buffer), caps);
 
@@ -616,39 +643,6 @@ gst_wayland_sink_start (GstBaseSink * bsink)
 }
 
 static gboolean
-gst_wayland_sink_unlock (GstBaseSink * bsink)
-{
-  GstWayLandSink *sink = (GstWayLandSink *) bsink;
-
-  GST_DEBUG_OBJECT (sink, "unlock");
-
-  g_mutex_lock (sink->buffer_lock);
-
-  sink->unlock = TRUE;
-
-  g_mutex_unlock (sink->buffer_lock);
-
-  return TRUE;
-}
-
-static gboolean
-gst_wayland_sink_unlock_stop (GstBaseSink * bsink)
-{
-  GstWayLandSink *sink = (GstWayLandSink *) bsink;
-
-  GST_DEBUG_OBJECT (sink, "unlock_stop");
-
-  g_mutex_lock (sink->buffer_lock);
-
-  sink->unlock = FALSE;
-
-  g_mutex_unlock (sink->buffer_lock);
-
-  return TRUE;
-}
-
-
-static gboolean
 gst_wayland_sink_stop (GstBaseSink * bsink)
 {
   GstWayLandSink *sink = (GstWayLandSink *) bsink;
@@ -671,7 +665,6 @@ gst_wayland_sink_render (GstBaseSink * bsink, GstBuffer * buffer)
 {
   GstWayLandSink *sink = GST_WAYLAND_SINK (bsink);
   gboolean mem_cpy = TRUE;
-
   GST_LOG_OBJECT (sink,
       "render buffer %p, data = %p, timestamp = %" GST_TIME_FORMAT, buffer,
       GST_BUFFER_DATA (buffer), GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buffer)));
@@ -693,7 +686,8 @@ gst_wayland_sink_render (GstBaseSink * bsink, GstBuffer * buffer)
       }
     } else {
       /* Not our baby! */
-      GST_DEBUG_OBJECT (sink, "we have a buffer (%p) we did not allocate", buffer);
+      GST_DEBUG_OBJECT (sink, "we have a buffer (%p) we did not allocate",
+          buffer);
     }
 
     if (mem_cpy) {
@@ -749,4 +743,4 @@ plugin_init (GstPlugin * plugin)
 GST_PLUGIN_DEFINE (GST_VERSION_MAJOR,
     GST_VERSION_MINOR,
     "waylandsink",
-    "WayLand Video Sink", plugin_init, VERSION, "LGPL", "gst-wayland", "")
+    "Wayland Video Sink", plugin_init, VERSION, "LGPL", "gst-wayland", "")

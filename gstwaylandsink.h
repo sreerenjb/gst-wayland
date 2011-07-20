@@ -94,21 +94,14 @@ struct _GstWayLandSink
   struct display *display;
   struct window *window;
 
-  GCond *buffer_cond;
-  GMutex *buffer_lock;
-
   GMutex *pool_lock;
   GSList *buffer_pool;
 
-  GCond *wayland_cond;
   GMutex *wayland_lock;
-
-  gboolean unlock;
 
   guint width, height, depth, size;
   guint bpp;
 
-  void *MapAddr;
   gboolean render_finish;
   gboolean init;
   gboolean mem_alloc;
