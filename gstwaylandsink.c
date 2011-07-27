@@ -710,9 +710,10 @@ gst_wayland_sink_render (GstBaseSink * bsink, GstBuffer * buffer)
 
     sink->render_finish = FALSE;
 
+    wl_buffer_damage (sink->window->buffer, 0, 0, sink->width, sink->height);
+    
     wl_surface_attach (sink->window->surface, sink->window->buffer, 0, 0);
 
-    wl_buffer_damage (sink->window->buffer, 0, 0, sink->width, sink->height);
 
     wl_surface_damage (sink->window->surface, 0, 0, sink->width, sink->height);
 
