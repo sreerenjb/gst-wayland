@@ -22,13 +22,6 @@
 
 /* The waylandsink is currently just a prototype . It creates its own window and render the decoded video frames to that.*/
 
-/* FixMe: Needs to add more synchronization stuffs */
-/* FixMe: Add signals so that the application/compositor is responsible for rendering */
-/* FixMe: Add h/w decoding support: buffers/libva surface */
-/* FixMe: Add the interfaces */
-/* Fixme: Add interface to support the window id from the higher level applicaiton */
-/* Fixme: Add support to work with video diamension changes */
-
 #ifdef HAVE_CONFIG_H
 #include <config.h>
 #endif
@@ -122,13 +115,9 @@ static void redraw (struct wl_surface *surface, void *data, uint32_t time);
 static struct window *create_window (GstWayLandSink * sink,
     struct display *display, int width, int height);
 
-static guint gst_wayland_sink_signals[LAST_SIGNAL] = { 0 };
-
 static void
 gst_wlbuffer_init (GstWlBuffer * buffer, gpointer g_class)
 {
-  buffer->width = 0;
-  buffer->height = 0;
   buffer->wbuffer = NULL;
   buffer->wlsink = NULL;
 }
@@ -238,14 +227,6 @@ gst_wayland_sink_class_init (GstWayLandSinkClass * klass)
           "WayLand  Display id created by the application ",
           G_PARAM_READWRITE));
 
-  /*Fixme: not using now */
-  gst_wayland_sink_signals[SIGNAL_FRAME_READY] =
-      g_signal_new ("frame-ready",
-      G_TYPE_FROM_CLASS (klass),
-      G_SIGNAL_RUN_LAST,
-      0, NULL, NULL,
-      g_cclosure_marshal_VOID__POINTER, G_TYPE_NONE, 1, G_TYPE_POINTER);
-
   parent_class = g_type_class_peek_parent (klass);
 }
 
@@ -261,9 +242,6 @@ gst_wayland_sink_init (GstWayLandSink * sink,
 
   sink->wayland_lock = g_mutex_new ();
 
-  sink->render_finish = TRUE;
-  sink->mem_alloc = FALSE;
-  sink->init = FALSE;
 }
 
 static void
@@ -388,6 +366,7 @@ create_display (void)
 
   wl_display_add_global_listener (display->display,
       display_handle_global, display);
+
   wl_display_iterate (display->display, WL_DISPLAY_READABLE);
 
   wl_display_get_fd (display->display, event_mask_update, display);
@@ -429,8 +408,8 @@ wayland_buffer_create (GstWayLandSink * sink)
     exit (0);
   }
 
-  stride = sink->width * 4;
-  size = stride * sink->height;
+  stride = sink->video_width * 4;
+  size = stride * sink->video_height;
 
   if (ftruncate (fd, size) < 0) {
     GST_ERROR_OBJECT (sink, "ftruncate failed:");
@@ -447,13 +426,12 @@ wayland_buffer_create (GstWayLandSink * sink)
   }
 
   wbuffer->wbuffer = wl_shm_create_buffer (sink->display->shm, fd,
-      sink->width, sink->height, stride, sink->display->xrgb_visual);
+      sink->video_width, sink->video_height, stride, sink->display->xrgb_visual);
 
   close (fd);
 
   GST_BUFFER_DATA (wbuffer) = data;
   GST_BUFFER_SIZE (wbuffer) = size;
-
 
   return wbuffer;
 
@@ -492,7 +470,6 @@ gst_wayland_sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
   GstWayLandSink *sink = GST_WAYLAND_SINK (bsink);
   GstWlBuffer *buffer = NULL;
   GstFlowReturn ret = GST_FLOW_OK;
-  gint width, height;
   GstStructure *structure = NULL;
   GstCaps *desired_caps = NULL;
 
@@ -502,11 +479,9 @@ gst_wayland_sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
   desired_caps = gst_caps_copy (caps);
   structure = gst_caps_get_structure (desired_caps, 0);
 
-  if (gst_structure_get_int (structure, "width", &width) &&
-      gst_structure_get_int (structure, "height", &height)) {
-    sink->width = width;
-    sink->height = height;
-    sink->bpp = size / width / height;
+  if (gst_structure_get_int (structure, "width", &sink->video_width) &&
+      gst_structure_get_int (structure, "height", &sink->video_height)) {
+    sink->bpp = size / sink->video_width / sink->video_height;
   }
 
   g_mutex_lock (sink->pool_lock);
@@ -565,8 +540,8 @@ gst_wayland_sink_set_caps (GstBaseSink * bsink, GstCaps * caps)
 
   structure = gst_caps_get_structure (caps, 0);
 
-  ret &= gst_structure_get_int (structure, "width", &sink->width);
-  ret &= gst_structure_get_int (structure, "height", &sink->height);
+  ret &= gst_structure_get_int (structure, "width", &sink->video_width);
+  ret &= gst_structure_get_int (structure, "height", &sink->video_height);
 
   if (!ret)
     return FALSE;
@@ -619,7 +594,7 @@ create_window (GstWayLandSink * sink, struct display *display, int width,
   window->height = height;
   window->surface = wl_compositor_create_surface (display->compositor);
 
-  wl_shell_set_toplevel (display->shell, window->surface);
+  //wl_shell_set_toplevel (display->shell, window->surface);
 
   g_mutex_unlock (sink->wayland_lock);
   return window;
@@ -710,12 +685,12 @@ gst_wayland_sink_render (GstBaseSink * bsink, GstBuffer * buffer)
 
     sink->render_finish = FALSE;
 
-    wl_buffer_damage (sink->window->buffer, 0, 0, sink->width, sink->height);
+    wl_buffer_damage (sink->window->buffer, 0, 0, sink->video_width, sink->video_height);
     
     wl_surface_attach (sink->window->surface, sink->window->buffer, 0, 0);
 
 
-    wl_surface_damage (sink->window->surface, 0, 0, sink->width, sink->height);
+    wl_surface_damage (sink->window->surface, 0, 0, sink->video_width, sink->video_height);
 
     wl_display_frame_callback (sink->display->display,
         sink->window->surface, redraw, sink);

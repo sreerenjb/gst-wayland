@@ -76,11 +76,6 @@ struct _GstWlBuffer {
   
   WlBuffer *wbuffer;
   
-  gint height;
-  gint width;
-
-  gboolean locked;
-
   GstWayLandSink *wlsink;
 };
 
@@ -99,13 +94,12 @@ struct _GstWayLandSink
 
   GMutex *wayland_lock;
 
-  guint width, height, depth, size;
+  guint video_width;
+  guint video_height;
   guint bpp;
 
   gboolean render_finish;
-  gboolean init;
-  gboolean mem_alloc;
-      
+
 };
 
 struct _GstWayLandSinkClass
