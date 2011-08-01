@@ -20,7 +20,7 @@
  */
 
 
-/* The waylandsink is currently just a prototype . It creates its own window and render the decoded video frames to that.*/
+/* The waylandsink is creating its own window and render the decoded video frames to that.*/
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -426,7 +426,8 @@ wayland_buffer_create (GstWayLandSink * sink)
   }
 
   wbuffer->wbuffer = wl_shm_create_buffer (sink->display->shm, fd,
-      sink->video_width, sink->video_height, stride, sink->display->xrgb_visual);
+      sink->video_width, sink->video_height, stride,
+      sink->display->xrgb_visual);
 
   close (fd);
 
@@ -640,6 +641,8 @@ gst_wayland_sink_render (GstBaseSink * bsink, GstBuffer * buffer)
 {
   GstWayLandSink *sink = GST_WAYLAND_SINK (bsink);
   gboolean mem_cpy = TRUE;
+  GstVideoRectangle src, dst, res;
+
   GST_LOG_OBJECT (sink,
       "render buffer %p, data = %p, timestamp = %" GST_TIME_FORMAT, buffer,
       GST_BUFFER_DATA (buffer), GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buffer)));
@@ -683,14 +686,20 @@ gst_wayland_sink_render (GstBaseSink * bsink, GstBuffer * buffer)
       sink->window->buffer = wlbuf->wbuffer;
     }
 
+    src.w = sink->video_width;
+    src.h = sink->video_height;
+    dst.w = sink->window->width;
+    dst.h = sink->window->height;
+
+    gst_video_sink_center_rect (src, dst, &res, FALSE);
+
     sink->render_finish = FALSE;
 
-    wl_buffer_damage (sink->window->buffer, 0, 0, sink->video_width, sink->video_height);
-    
+    wl_buffer_damage (sink->window->buffer, 0, 0, res.w, res.h);
+
     wl_surface_attach (sink->window->surface, sink->window->buffer, 0, 0);
 
-
-    wl_surface_damage (sink->window->surface, 0, 0, sink->video_width, sink->video_height);
+    wl_surface_damage (sink->window->surface, 0, 0, res.w, res.h);
 
     wl_display_frame_callback (sink->display->display,
         sink->window->surface, redraw, sink);
