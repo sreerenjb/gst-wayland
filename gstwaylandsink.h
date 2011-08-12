@@ -41,9 +41,6 @@
 #define GST_WAYLAND_SINK_GET_CLASS(inst) \
         (G_TYPE_INSTANCE_GET_CLASS ((inst), GST_TYPE_WAYLAND_SINK, GstWaylandSinkClass))
 
-typedef struct wl_display WlDisplay;
-typedef struct wl_buffer WlBuffer;
-
 struct  display
 {
   struct wl_display *display;
@@ -74,7 +71,7 @@ typedef struct _GstWlBuffer GstWlBuffer;
 struct _GstWlBuffer {
   GstBuffer buffer; /* Extending GstBuffer */
   
-  WlBuffer *wbuffer;
+  struct wl_buffer *wbuffer;
   
   GstWaylandSink *wlsink;
 };
