@@ -77,7 +77,7 @@ static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
 GType gst_wayland_sink_get_type (void);
 
 /*Fixme: Add more interfaces */
-GST_BOILERPLATE (GstWayLandSink, gst_wayland_sink, GstVideoSink,
+GST_BOILERPLATE (GstWaylandSink, gst_wayland_sink, GstVideoSink,
     GST_TYPE_VIDEO_SINK);
 
 static void gst_wlbuffer_finalize (GstWlBuffer * wbuffer);
@@ -100,9 +100,9 @@ static gboolean gst_wayland_sink_preroll (GstBaseSink * bsink,
     GstBuffer * buffer);
 static gboolean gst_wayland_sink_render (GstBaseSink * bsink,
     GstBuffer * buffer);
-static void gst_wayland_bufferpool_clear (GstWayLandSink * sink);
+static void gst_wayland_bufferpool_clear (GstWaylandSink * sink);
 static void
-gsit_wayland_buffer_destroy (GstWayLandSink * sink, GstWlBuffer * buffer);
+gsit_wayland_buffer_destroy (GstWaylandSink * sink, GstWlBuffer * buffer);
 
 static int event_mask_update (uint32_t mask, void *data);
 static void sync_callback (void *data);
@@ -112,7 +112,7 @@ static void display_handle_global (struct wl_display *display, uint32_t id,
 static void compositor_handle_visual (void *data,
     struct wl_compositor *compositor, uint32_t id, uint32_t token);
 static void redraw (struct wl_surface *surface, void *data, uint32_t time);
-static struct window *create_window (GstWayLandSink * sink,
+static struct window *create_window (GstWaylandSink * sink,
     struct display *display, int width, int height);
 
 static void
@@ -160,7 +160,7 @@ gst_wlbuffer_get_type (void)
 static void
 gst_wlbuffer_finalize (GstWlBuffer * wbuffer)
 {
-  GstWayLandSink *sink = NULL;
+  GstWaylandSink *sink = NULL;
 
   g_return_if_fail (wbuffer != NULL);
 
@@ -198,7 +198,7 @@ gst_wayland_sink_base_init (gpointer gclass)
 }
 
 static void
-gst_wayland_sink_class_init (GstWayLandSinkClass * klass)
+gst_wayland_sink_class_init (GstWaylandSinkClass * klass)
 {
   GObjectClass *gobject_class;
   GstElementClass *gstelement_class;
@@ -223,16 +223,16 @@ gst_wayland_sink_class_init (GstWayLandSinkClass * klass)
   gstbasesink_class->render = GST_DEBUG_FUNCPTR (gst_wayland_sink_render);
 
   g_object_class_install_property (gobject_class, PROP_WAYLAND_DISPLAY,
-      g_param_spec_pointer ("wayland-display", "WayLand Display",
-          "WayLand  Display id created by the application ",
+      g_param_spec_pointer ("wayland-display", "Wayland Display",
+          "Wayland  Display id created by the application ",
           G_PARAM_READWRITE));
 
   parent_class = g_type_class_peek_parent (klass);
 }
 
 static void
-gst_wayland_sink_init (GstWayLandSink * sink,
-    GstWayLandSinkClass * wayland_sink_class)
+gst_wayland_sink_init (GstWaylandSink * sink,
+    GstWaylandSinkClass * wayland_sink_class)
 {
 
   sink->caps = NULL;
@@ -248,7 +248,7 @@ static void
 gst_wayland_sink_get_property (GObject * object,
     guint prop_id, GValue * value, GParamSpec * pspec)
 {
-  GstWayLandSink *sink = GST_WAYLAND_SINK (object);
+  GstWaylandSink *sink = GST_WAYLAND_SINK (object);
 
   switch (prop_id) {
     case PROP_WAYLAND_DISPLAY:
@@ -264,7 +264,7 @@ static void
 gst_wayland_sink_set_property (GObject * object,
     guint prop_id, const GValue * value, GParamSpec * pspec)
 {
-  GstWayLandSink *sink = GST_WAYLAND_SINK (object);
+  GstWaylandSink *sink = GST_WAYLAND_SINK (object);
 
   switch (prop_id) {
     case PROP_WAYLAND_DISPLAY:
@@ -279,7 +279,7 @@ gst_wayland_sink_set_property (GObject * object,
 static void
 gst_wayland_sink_dispose (GObject * object)
 {
-  GstWayLandSink *sink = GST_WAYLAND_SINK (object);
+  GstWaylandSink *sink = GST_WAYLAND_SINK (object);
 
   G_OBJECT_CLASS (parent_class)->dispose (object);
 }
@@ -287,7 +287,7 @@ gst_wayland_sink_dispose (GObject * object)
 static void
 gst_wayland_sink_finalize (GObject * object)
 {
-  GstWayLandSink *sink = GST_WAYLAND_SINK (object);
+  GstWaylandSink *sink = GST_WAYLAND_SINK (object);
 
   GST_DEBUG_OBJECT (sink, "Finalizing the sink..");
   gst_caps_replace (&sink->caps, NULL);
@@ -382,7 +382,7 @@ create_display (void)
 
 
 static GstWlBuffer *
-wayland_buffer_create (GstWayLandSink * sink)
+wayland_buffer_create (GstWaylandSink * sink)
 {
   char filename[1024];
   int i, fd, size, stride;
@@ -439,7 +439,7 @@ wayland_buffer_create (GstWayLandSink * sink)
 }
 
 static void
-gst_wayland_buffer_destroy (GstWayLandSink * sink, GstWlBuffer * buffer)
+gst_wayland_buffer_destroy (GstWaylandSink * sink, GstWlBuffer * buffer)
 {
   if (buffer->wlsink) {
     buffer->wlsink = NULL;
@@ -451,7 +451,7 @@ gst_wayland_buffer_destroy (GstWayLandSink * sink, GstWlBuffer * buffer)
 }
 
 static void
-gst_wayland_bufferpool_clear (GstWayLandSink * sink)
+gst_wayland_bufferpool_clear (GstWaylandSink * sink)
 {
   g_mutex_lock (sink->pool_lock);
   while (sink->buffer_pool) {
@@ -468,7 +468,7 @@ static GstFlowReturn
 gst_wayland_sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
     GstCaps * caps, GstBuffer ** buf)
 {
-  GstWayLandSink *sink = GST_WAYLAND_SINK (bsink);
+  GstWaylandSink *sink = GST_WAYLAND_SINK (bsink);
   GstWlBuffer *buffer = NULL;
   GstFlowReturn ret = GST_FLOW_OK;
   GstStructure *structure = NULL;
@@ -516,7 +516,7 @@ gst_wayland_sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
 static gboolean
 gst_wayland_sink_set_caps (GstBaseSink * bsink, GstCaps * caps)
 {
-  GstWayLandSink *sink = GST_WAYLAND_SINK (bsink);
+  GstWaylandSink *sink = GST_WAYLAND_SINK (bsink);
   const GstStructure *structure;
   GstFlowReturn result = GST_FLOW_OK;
   GstCaps *allowed_caps;
@@ -571,7 +571,7 @@ static void
 redraw (struct wl_surface *surface, void *data, uint32_t time)
 {
 
-  GstWayLandSink *sink = (GstWayLandSink *) data;
+  GstWaylandSink *sink = (GstWaylandSink *) data;
   g_mutex_lock (sink->wayland_lock);
 
   sink->render_finish = TRUE;
@@ -580,7 +580,7 @@ redraw (struct wl_surface *surface, void *data, uint32_t time)
 }
 
 static struct window *
-create_window (GstWayLandSink * sink, struct display *display, int width,
+create_window (GstWaylandSink * sink, struct display *display, int width,
     int height)
 {
   struct window *window;
@@ -605,7 +605,7 @@ create_window (GstWayLandSink * sink, struct display *display, int width,
 static gboolean
 gst_wayland_sink_start (GstBaseSink * bsink)
 {
-  GstWayLandSink *sink = (GstWayLandSink *) bsink;
+  GstWaylandSink *sink = (GstWaylandSink *) bsink;
   gboolean result = TRUE;
 
   GST_DEBUG_OBJECT (sink, "start");
@@ -621,7 +621,7 @@ gst_wayland_sink_start (GstBaseSink * bsink)
 static gboolean
 gst_wayland_sink_stop (GstBaseSink * bsink)
 {
-  GstWayLandSink *sink = (GstWayLandSink *) bsink;
+  GstWaylandSink *sink = (GstWaylandSink *) bsink;
 
   GST_DEBUG_OBJECT (sink, "stop");
 
@@ -639,7 +639,7 @@ gst_wayland_sink_preroll (GstBaseSink * bsink, GstBuffer * buffer)
 static GstFlowReturn
 gst_wayland_sink_render (GstBaseSink * bsink, GstBuffer * buffer)
 {
-  GstWayLandSink *sink = GST_WAYLAND_SINK (bsink);
+  GstWaylandSink *sink = GST_WAYLAND_SINK (bsink);
   gboolean mem_cpy = TRUE;
   GstVideoRectangle src, dst, res;
 

@@ -31,15 +31,15 @@
 #define GST_TYPE_WAYLAND_SINK \
 	    (gst_wayland_sink_get_type())
 #define GST_WAYLAND_SINK(obj) \
-	    (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_WAYLAND_SINK,GstWayLandSink))
+	    (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_WAYLAND_SINK,GstWaylandSink))
 #define GST_WAYLAND_SINK_CLASS(klass) \
-	    (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_WAYLAND_SINK,GstWayLandSinkClass))
+	    (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_WAYLAND_SINK,GstWaylandSinkClass))
 #define GST_IS_WAYLAND_SINK(obj) \
 	    (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_WAYLAND_SINK))
 #define GST_IS_WAYLAND_SINK_CLASS(klass) \
 	    (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_WAYLAND_SINK))
 #define GST_WAYLAND_SINK_GET_CLASS(inst) \
-        (G_TYPE_INSTANCE_GET_CLASS ((inst), GST_TYPE_WAYLAND_SINK, GstWayLandSinkClass))
+        (G_TYPE_INSTANCE_GET_CLASS ((inst), GST_TYPE_WAYLAND_SINK, GstWaylandSinkClass))
 
 typedef struct wl_display WlDisplay;
 typedef struct wl_buffer WlBuffer;
@@ -62,8 +62,8 @@ struct window
   struct wl_buffer *buffer;
 };
 
-typedef struct _GstWayLandSink GstWayLandSink;
-typedef struct _GstWayLandSinkClass GstWayLandSinkClass;
+typedef struct _GstWaylandSink GstWaylandSink;
+typedef struct _GstWaylandSinkClass GstWaylandSinkClass;
 
 #define GST_TYPE_WLBUFFER (gst_wlbuffer_get_type())
 #define GST_IS_WLBUFFER(obj) (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GST_TYPE_WLBUFFER))
@@ -76,10 +76,10 @@ struct _GstWlBuffer {
   
   WlBuffer *wbuffer;
   
-  GstWayLandSink *wlsink;
+  GstWaylandSink *wlsink;
 };
 
-struct _GstWayLandSink
+struct _GstWaylandSink
 {
 
   GstVideoSink parent;
@@ -102,7 +102,7 @@ struct _GstWayLandSink
 
 };
 
-struct _GstWayLandSinkClass
+struct _GstWaylandSinkClass
 {
   GstVideoSinkClass parent; 
 
