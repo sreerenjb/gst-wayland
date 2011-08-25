@@ -91,8 +91,8 @@ struct _GstWaylandSink
 
   GMutex *wayland_lock;
 
-  guint video_width;
-  guint video_height;
+  gint video_width;
+  gint video_height;
   guint bpp;
 
   gboolean render_finish;

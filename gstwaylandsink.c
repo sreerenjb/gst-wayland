@@ -73,8 +73,7 @@ static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
         "green_mask = (int) 16711680, "
         "blue_mask = (int) -16777216,"
         "width = (int) [ 1, MAX ], " "height = (int) [ 1, MAX ] "));
-
-GType gst_wayland_sink_get_type (void);
+GType gst_wlbuffer_get_type (void);
 
 /*Fixme: Add more interfaces */
 GST_BOILERPLATE (GstWaylandSink, gst_wayland_sink, GstVideoSink,
@@ -102,7 +101,7 @@ static gboolean gst_wayland_sink_render (GstBaseSink * bsink,
     GstBuffer * buffer);
 static void gst_wayland_bufferpool_clear (GstWaylandSink * sink);
 static void
-gsit_wayland_buffer_destroy (GstWaylandSink * sink, GstWlBuffer * buffer);
+gst_wayland_buffer_destroy (GstWaylandSink * sink, GstWlBuffer * buffer);
 
 static int event_mask_update (uint32_t mask, void *data);
 static void sync_callback (void *data);
@@ -279,8 +278,6 @@ gst_wayland_sink_set_property (GObject * object,
 static void
 gst_wayland_sink_dispose (GObject * object)
 {
-  GstWaylandSink *sink = GST_WAYLAND_SINK (object);
-
   G_OBJECT_CLASS (parent_class)->dispose (object);
 }
 
@@ -380,12 +377,11 @@ create_display (void)
   return display;
 }
 
-
 static GstWlBuffer *
 wayland_buffer_create (GstWaylandSink * sink)
 {
   char filename[1024];
-  int i, fd, size, stride;
+  int fd, size, stride;
   static void *data;
   static int init = 0;
   GstWlBuffer *wbuffer;
@@ -518,11 +514,9 @@ gst_wayland_sink_set_caps (GstBaseSink * bsink, GstCaps * caps)
 {
   GstWaylandSink *sink = GST_WAYLAND_SINK (bsink);
   const GstStructure *structure;
-  GstFlowReturn result = GST_FLOW_OK;
   GstCaps *allowed_caps;
   gboolean ret = TRUE;
   GstCaps *intersection;
-  const GValue *fps;
 
   GST_LOG_OBJECT (sink, "set caps %" GST_PTR_FORMAT, caps);
 
@@ -584,8 +578,6 @@ create_window (GstWaylandSink * sink, struct display *display, int width,
     int height)
 {
   struct window *window;
-  struct wl_visual *visual;
-  void *data;
 
   g_mutex_lock (sink->wayland_lock);
 
