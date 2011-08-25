@@ -42,7 +42,6 @@
 #include "gstwaylandsink.h"
 
 #include <wayland-client.h>
-#include <wayland-egl.h>
 
 /* signals */
 enum

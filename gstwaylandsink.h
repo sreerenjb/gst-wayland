@@ -26,7 +26,6 @@
 #include <gst/video/gstvideosink.h>
 
 #include <wayland-client.h>
-#include <wayland-egl.h>
 
 #define GST_TYPE_WAYLAND_SINK \
 	    (gst_wayland_sink_get_type())
