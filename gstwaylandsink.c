@@ -107,9 +107,7 @@ static void sync_callback (void *data);
 static struct display *create_display (void);
 static void display_handle_global (struct wl_display *display, uint32_t id,
     const char *interface, uint32_t version, void *data);
-static void compositor_handle_visual (void *data,
-    struct wl_compositor *compositor, uint32_t id, uint32_t token);
-static void redraw (struct wl_surface *surface, void *data, uint32_t time);
+static void redraw (void *data, struct wl_callback *callback, uint32_t time);
 static struct window *create_window (GstWaylandSink * sink,
     struct display *display, int width, int height);
 
@@ -330,10 +328,6 @@ sync_callback (void *data)
   *done = 1;
 }
 
-static const struct wl_compositor_listener compositor_listener = {
-  compositor_handle_visual,
-};
-
 static void
 display_handle_global (struct wl_display *display, uint32_t id,
     const char *interface, uint32_t version, void *data)
@@ -341,12 +335,11 @@ display_handle_global (struct wl_display *display, uint32_t id,
   struct display *d = data;
 
   if (strcmp (interface, "wl_compositor") == 0) {
-    d->compositor = wl_compositor_create (display, id, 1);
-    wl_compositor_add_listener (d->compositor, &compositor_listener, d);
+    d->compositor = wl_display_bind (display, id, &wl_compositor_interface);
   } else if (strcmp (interface, "wl_shell") == 0) {
-    d->shell = wl_shell_create (display, id, 1);
+    d->shell = wl_display_bind (display, id, &wl_shell_interface);
   } else if (strcmp (interface, "wl_shm") == 0) {
-    d->shm = wl_shm_create (display, id, 1);
+    d->shm = wl_display_bind (display, id, &wl_shm_interface);
   }
 
 }
@@ -359,6 +352,7 @@ create_display (void)
 
   display = malloc (sizeof *display);
   display->display = wl_display_connect (NULL);
+  assert (display->display);
 
   wl_display_add_global_listener (display->display,
       display_handle_global, display);
@@ -366,12 +360,6 @@ create_display (void)
   wl_display_iterate (display->display, WL_DISPLAY_READABLE);
 
   wl_display_get_fd (display->display, event_mask_update, display);
-
-  wl_display_sync_callback (display->display, sync_callback, &done);
-
-  while (!display->xrgb_visual) {
-    wl_display_iterate (display->display, display->mask);
-  }
 
   return display;
 }
@@ -421,8 +409,7 @@ wayland_buffer_create (GstWaylandSink * sink)
   }
 
   wbuffer->wbuffer = wl_shm_create_buffer (sink->display->shm, fd,
-      sink->video_width, sink->video_height, stride,
-      sink->display->xrgb_visual);
+      sink->video_width, sink->video_height, stride, WL_SHM_FORMAT_XRGB32);
 
   close (fd);
 
@@ -547,21 +534,10 @@ gst_wayland_sink_set_caps (GstBaseSink * bsink, GstCaps * caps)
   return TRUE;
 }
 
-static void
-compositor_handle_visual (void *data,
-    struct wl_compositor *compositor, uint32_t id, uint32_t token)
-{
-  struct display *d = data;
-
-  switch (token) {
-    case WL_COMPOSITOR_VISUAL_XRGB32:
-      d->xrgb_visual = wl_visual_create (d->display, id, 1);
-      break;
-  }
-}
+static const struct wl_callback_listener frame_listener;
 
 static void
-redraw (struct wl_surface *surface, void *data, uint32_t time)
+redraw (void *data, struct wl_callback *callback, uint32_t time)
 {
 
   GstWaylandSink *sink = (GstWaylandSink *) data;
@@ -627,12 +603,14 @@ gst_wayland_sink_preroll (GstBaseSink * bsink, GstBuffer * buffer)
   return gst_wayland_sink_render (bsink, buffer);
 }
 
+
 static GstFlowReturn
 gst_wayland_sink_render (GstBaseSink * bsink, GstBuffer * buffer)
 {
   GstWaylandSink *sink = GST_WAYLAND_SINK (bsink);
   gboolean mem_cpy = TRUE;
   GstVideoRectangle src, dst, res;
+  struct wl_callback *callback = NULL;
 
   GST_LOG_OBJECT (sink,
       "render buffer %p, data = %p, timestamp = %" GST_TIME_FORMAT, buffer,
@@ -692,19 +670,24 @@ gst_wayland_sink_render (GstBaseSink * bsink, GstBuffer * buffer)
 
     wl_surface_damage (sink->window->surface, 0, 0, res.w, res.h);
 
-    wl_display_frame_callback (sink->display->display,
-        sink->window->surface, redraw, sink);
+    if (sink->callback)
+      wl_callback_destroy (sink->callback);
 
+    sink->callback = wl_surface_frame (sink->window->surface);
+    wl_callback_add_listener (sink->callback, &frame_listener, sink);
     wl_display_iterate (sink->display->display, sink->display->mask);
 
   } else {
     GST_LOG_OBJECT (sink,
         "Waiting to get the signal from compositor to render the next frame..");
-    g_usleep (50000);
     sink->render_finish = TRUE;
   }
   return GST_FLOW_OK;
 }
+
+static const struct wl_callback_listener frame_listener = {
+  redraw
+};
 
 static gboolean
 plugin_init (GstPlugin * plugin)
