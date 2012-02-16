@@ -103,7 +103,6 @@ static void
 gst_wayland_buffer_destroy (GstWaylandSink * sink, GstWlBuffer * buffer);
 
 static int event_mask_update (uint32_t mask, void *data);
-static void sync_callback (void *data);
 static struct display *create_display (void);
 static void display_handle_global (struct wl_display *display, uint32_t id,
     const char *interface, uint32_t version, void *data);
@@ -237,7 +236,7 @@ gst_wayland_sink_init (GstWaylandSink * sink,
   sink->buffer_pool = NULL;
 
   sink->wayland_lock = g_mutex_new ();
-
+  sink->render_finish = TRUE;
 }
 
 static void
@@ -271,6 +270,32 @@ gst_wayland_sink_set_property (GObject * object,
       break;
   }
 }
+
+static void
+destroy_display (struct display *display)
+{
+  if (display->shm)
+    wl_shm_destroy (display->shm);
+
+  if (display->shell)
+    wl_shell_destroy (display->shell);
+
+  if (display->compositor)
+    wl_compositor_destroy (display->compositor);
+
+  wl_display_flush (display->display);
+  wl_display_destroy (display->display);
+  free (display);
+}
+
+static void
+destroy_window (struct window *window)
+{
+  wl_shell_surface_destroy (window->shell_surface);
+  wl_surface_destroy (window->surface);
+  free (window);
+}
+
 
 static void
 gst_wayland_sink_dispose (GObject * object)
@@ -321,12 +346,16 @@ event_mask_update (uint32_t mask, void *data)
 }
 
 static void
-sync_callback (void *data)
+shm_format (void *data, struct wl_shm *wl_shm, uint32_t format)
 {
-  int *done = data;
+  struct display *d = data;
 
-  *done = 1;
+  d->formats |= (1 << format);
 }
+
+struct wl_shm_listener shm_listenter = {
+  shm_format
+};
 
 static void
 display_handle_global (struct wl_display *display, uint32_t id,
@@ -340,6 +369,7 @@ display_handle_global (struct wl_display *display, uint32_t id,
     d->shell = wl_display_bind (display, id, &wl_shell_interface);
   } else if (strcmp (interface, "wl_shm") == 0) {
     d->shm = wl_display_bind (display, id, &wl_shm_interface);
+    wl_shm_add_listener (d->shm, &shm_listenter, d);
   }
 
 }
@@ -356,8 +386,13 @@ create_display (void)
 
   wl_display_add_global_listener (display->display,
       display_handle_global, display);
-
   wl_display_iterate (display->display, WL_DISPLAY_READABLE);
+  wl_display_roundtrip (display->display);
+
+  if (!(display->formats & (1 << WL_SHM_FORMAT_XRGB8888))) {
+    GST_ERROR ("WL_SHM_FORMAT_XRGB32 not available");
+    return NULL;
+  }
 
   wl_display_get_fd (display->display, event_mask_update, display);
 
@@ -378,12 +413,7 @@ wayland_buffer_create (GstWaylandSink * sink)
   wbuffer = (GstWlBuffer *) gst_mini_object_new (GST_TYPE_WLBUFFER);
   wbuffer->wlsink = gst_object_ref (sink);
 
-  if (!init) {
-    wl_display_iterate (sink->display->display, sink->display->mask);
-    init++;
-  }
-
-  snprintf (filename, 256, "%s-%d-%s", "/tmp/wayland-shm", init, "XXXXXX");
+  snprintf (filename, 256, "%s-%d-%s", "/tmp/wayland-shm", init++, "XXXXXX");
 
   fd = mkstemp (filename);
   if (fd < 0) {
@@ -409,7 +439,7 @@ wayland_buffer_create (GstWaylandSink * sink)
   }
 
   wbuffer->wbuffer = wl_shm_create_buffer (sink->display->shm, fd,
-      sink->video_width, sink->video_height, stride, WL_SHM_FORMAT_XRGB32);
+      sink->video_width, sink->video_height, stride, WL_SHM_FORMAT_XRGB8888);
 
   close (fd);
 
@@ -539,13 +569,8 @@ static const struct wl_callback_listener frame_listener;
 static void
 redraw (void *data, struct wl_callback *callback, uint32_t time)
 {
-
   GstWaylandSink *sink = (GstWaylandSink *) data;
-  g_mutex_lock (sink->wayland_lock);
-
   sink->render_finish = TRUE;
-
-  g_mutex_unlock (sink->wayland_lock);
 }
 
 static struct window *
@@ -561,8 +586,10 @@ create_window (GstWaylandSink * sink, struct display *display, int width,
   window->width = width;
   window->height = height;
   window->surface = wl_compositor_create_surface (display->compositor);
-
-  //wl_shell_set_toplevel (display->shell, window->surface);
+  window->shell_surface = wl_shell_get_shell_surface (display->shell,
+      window->surface);
+//  wl_shell_surface_set_toplevel (window->shell_surface);
+  wl_shell_surface_set_fullscreen (window->shell_surface);
 
   g_mutex_unlock (sink->wayland_lock);
   return window;
@@ -676,12 +703,10 @@ gst_wayland_sink_render (GstBaseSink * bsink, GstBuffer * buffer)
     sink->callback = wl_surface_frame (sink->window->surface);
     wl_callback_add_listener (sink->callback, &frame_listener, sink);
     wl_display_iterate (sink->display->display, sink->display->mask);
-
-  } else {
+  } else
     GST_LOG_OBJECT (sink,
         "Waiting to get the signal from compositor to render the next frame..");
-    sink->render_finish = TRUE;
-  }
+
   return GST_FLOW_OK;
 }
 
