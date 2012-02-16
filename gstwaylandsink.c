@@ -107,7 +107,7 @@ static struct display *create_display (void);
 static void display_handle_global (struct wl_display *display, uint32_t id,
     const char *interface, uint32_t version, void *data);
 static void redraw (void *data, struct wl_callback *callback, uint32_t time);
-static struct window *create_window (GstWaylandSink * sink,
+static void create_window (GstWaylandSink * sink,
     struct display *display, int width, int height);
 
 static void
@@ -230,6 +230,9 @@ gst_wayland_sink_init (GstWaylandSink * sink,
     GstWaylandSinkClass * wayland_sink_class)
 {
 
+  sink->display = NULL;
+  sink->window = NULL;
+
   sink->caps = NULL;
 
   sink->pool_lock = g_mutex_new ();
@@ -295,7 +298,6 @@ destroy_window (struct window *window)
   wl_surface_destroy (window->surface);
   free (window);
 }
-
 
 static void
 gst_wayland_sink_dispose (GObject * object)
@@ -573,11 +575,14 @@ redraw (void *data, struct wl_callback *callback, uint32_t time)
   sink->render_finish = TRUE;
 }
 
-static struct window *
+static void
 create_window (GstWaylandSink * sink, struct display *display, int width,
     int height)
 {
   struct window *window;
+
+  if (sink->window)
+    return;
 
   g_mutex_lock (sink->wayland_lock);
 
@@ -588,11 +593,10 @@ create_window (GstWaylandSink * sink, struct display *display, int width,
   window->surface = wl_compositor_create_surface (display->compositor);
   window->shell_surface = wl_shell_get_shell_surface (display->shell,
       window->surface);
-//  wl_shell_surface_set_toplevel (window->shell_surface);
   wl_shell_surface_set_fullscreen (window->shell_surface);
 
+  sink->window = window;
   g_mutex_unlock (sink->wayland_lock);
-  return window;
 }
 
 
@@ -606,8 +610,6 @@ gst_wayland_sink_start (GstBaseSink * bsink)
 
   if (!sink->display)
     sink->display = create_display ();
-  if (!sink->window)
-    sink->window = create_window (sink, sink->display, 1280, 720);
 
   return result;
 }
@@ -642,6 +644,9 @@ gst_wayland_sink_render (GstBaseSink * bsink, GstBuffer * buffer)
   GST_LOG_OBJECT (sink,
       "render buffer %p, data = %p, timestamp = %" GST_TIME_FORMAT, buffer,
       GST_BUFFER_DATA (buffer), GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buffer)));
+
+  if (!sink->window)
+    create_window (sink, sink->display, sink->video_width, sink->video_height);
 
   if (sink->render_finish) {
     if (GST_IS_WLBUFFER (buffer)) {
