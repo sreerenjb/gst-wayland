@@ -593,7 +593,8 @@ create_window (GstWaylandSink * sink, struct display *display, int width,
   window->surface = wl_compositor_create_surface (display->compositor);
   window->shell_surface = wl_shell_get_shell_surface (display->shell,
       window->surface);
-  wl_shell_surface_set_fullscreen (window->shell_surface);
+  wl_shell_surface_set_fullscreen (window->shell_surface,
+      WL_SHELL_SURFACE_FULLSCREEN_METHOD_DEFAULT, 0, NULL);
 
   sink->window = window;
   g_mutex_unlock (sink->wayland_lock);
